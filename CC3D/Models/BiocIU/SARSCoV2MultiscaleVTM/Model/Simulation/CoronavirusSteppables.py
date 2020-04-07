@@ -13,10 +13,10 @@ import numpy as np
 vrl_key = 'viral_replication_loaded'  # Internal use; do not remove
 
 # Data control options
-plot_pop_data_freq = 1  # Plot population data frequency (disable with 0)
-write_pop_data_freq = 0  # Write population data to simulation directory frequency (disable with 0)
-plot_med_viral_data_freq = 0  # Plot total diffusive viral amount frequency (disable with 0)
-write_med_viral_data_freq = 0  # Write total diffusive viral amount frequency (disable with 0)
+plot_pop_data_freq = -1  # Plot population data frequency (disable with 0)
+write_pop_data_freq = -1  # Write population data to simulation directory frequency (disable with 0)
+plot_med_viral_data_freq = -1  # Plot total diffusive viral amount frequency (disable with 0)
+write_med_viral_data_freq = -1  # Write total diffusive viral amount frequency (disable with 0)
 
 # Conversion Factors
 s_to_mcs = 120.0  # s/mcs
@@ -390,6 +390,18 @@ class ImmuneCellSeedingSteppable(SteppableBasePy):
     def __init__(self, frequency=1):
         SteppableBasePy.__init__(self, frequency)
 
+    def add_steering_panel(self):
+        self.add_steering_param(name='immune_seeding_rate', 
+              val=immune_seeding_rate, 
+              min_val=0, max_val=1, widget_name='slider')
+        
+
+    def process_steering_panel_data(self):
+        print('changed seding rate from: ', self.immune_seeding_rate)
+        self.immune_seeding_rate = self.get_steering_param('immune_seeding_rate')
+        print('to: ', self.immune_seeding_rate)
+    def start(self):
+        self.immune_seeding_rate = immune_seeding_rate
     def step(self, mcs):
         num_cells = len(self.cell_list_by_type(self.UNINFECTED, self.INFECTED, self.INFECTEDSECRETING))
         num_infected = len(self.cell_list_by_type(self.INFECTED, self.INFECTEDSECRETING))
@@ -403,7 +415,8 @@ class ImmuneCellSeedingSteppable(SteppableBasePy):
                 cell.targetVolume = 0.0
 
         p_immune_seeding = np.random.random()
-        if p_immune_seeding < immune_seeding_rate:
+        
+        if p_immune_seeding < self.immune_seeding_rate:
             open_space = True
             viral_concentration = 0
             for iteration in range(10):
@@ -550,3 +563,4 @@ class SimDataSteppable(SteppableBasePy):
 
     def finish(self):
         pass
+
