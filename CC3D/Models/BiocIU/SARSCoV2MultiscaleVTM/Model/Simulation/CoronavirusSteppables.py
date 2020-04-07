@@ -13,7 +13,7 @@ import numpy as np
 vrl_key = 'viral_replication_loaded'  # Internal use; do not remove
 
 # Data control options
-plot_pop_data_freq = -1  # Plot population data frequency (disable with 0)
+plot_pop_data_freq = 10  # Plot population data frequency (disable with 0)
 write_pop_data_freq = -1  # Write population data to simulation directory frequency (disable with 0)
 plot_med_viral_data_freq = -1  # Plot total diffusive viral amount frequency (disable with 0)
 write_med_viral_data_freq = -1  # Write total diffusive viral amount frequency (disable with 0)
