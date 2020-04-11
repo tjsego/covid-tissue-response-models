@@ -38,5 +38,7 @@ CompuCellSetup.register_steppable(steppable=Viral_InternalizationSteppable(frequ
 from CoronavirusSteppables import ImmuneRecruitmentSteppable
 CompuCellSetup.register_steppable(steppable=ImmuneRecruitmentSteppable(frequency=1))
 
+from CoronavirusSteppables import oxidationAgentModelSteppable
+CompuCellSetup.register_steppable(steppable=oxidationAgentModelSteppable(frequency=1))
 
 CompuCellSetup.run()

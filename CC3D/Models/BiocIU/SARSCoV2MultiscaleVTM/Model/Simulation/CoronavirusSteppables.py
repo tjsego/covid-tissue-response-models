@@ -43,7 +43,7 @@ else:
     from nCoVToolkit import nCoVUtils
 
 # Data control options
-plot_vrm_data_freq = 1  # Plot viral replication model data frequency (disable with 0)
+plot_vrm_data_freq = 0  # Plot viral replication model data frequency (disable with 0)
 write_vrm_data_freq = 0  # Write viral replication model data to simulation directory frequency (disable with 0)
 plot_vim_data_freq = 1  # Plot viral internalization model data frequency (disable with 0)
 write_vim_data_freq = 0  # Write viral internalization model data to simulation directory frequency (disable with 0)
@@ -51,7 +51,7 @@ plot_pop_data_freq = 0  # Plot population data frequency (disable with 0)
 write_pop_data_freq = 0  # Write population data to simulation directory frequency (disable with 0)
 plot_med_viral_data_freq = 0  # Plot total diffusive viral amount frequency (disable with 0)
 write_med_viral_data_freq = 0  # Write total diffusive viral amount frequency (disable with 0)
-plot_ir_data_freq = 1  # Plot immune recruitment data frequency (disable with 0)
+plot_ir_data_freq = 0  # Plot immune recruitment data frequency (disable with 0)
 write_ir_data_freq = 0  # Write immune recruitment data to simulation directory frequency (disable with 0)
 
 # Conversion Factors
@@ -94,9 +94,25 @@ exp_max_cytokine_consumption_mol = 3.5e-4  # pM/s
 exp_max_cytokine_immune_secretion_mol = 3.5e-3  # pM/s
 
 exp_EC50_cytokine_immune = 1  # pM from (B), it's a range from [1,50]pM
-
 # tbd: try to find experimental data
 minimum_activated_time_seconds = 60 * 60 # min * s/min
+
+
+## oxidation agent
+
+exp_oxi_dl = 3 * exp_cell_diameter # [um]; guestimation; [.3,3]
+exp_oxi_dc_water = 1.2 # cm2/day; http://www.idc-online.com/technical_references/pdfs/chemical_engineering/Transport_Properties_of_Hydrogen_Peroxide_II.pdf
+exp_oxi_dc_water = exp_oxi_dc_water * 1e8 / 86400 # um2/s
+exp_oxi_dc_cyto = exp_oxi_dc_water * .16 # rescale by relative density; cyto ~ 6*water
+# exp_oxi_dc_cyto = exp_cytokine_dc_cyto
+
+# the experimental values are WAY WAY too high for the simulation to behave properlly, so:
+exp_oxi_dc_cyto = 4 * exp_cytokine_dc_cyto
+
+
+
+
+
 
 
 # =============================
@@ -136,6 +152,22 @@ minimum_activated_time = minimum_activated_time_seconds/s_to_mcs # mcs
 ec50_infecte_ck_prod = 0.1 # amount of 'internal assembled virus' to be at 50% ck production; chosen from 
 # tipical simulation values of cell.dict['Uptake'] + cell.dict['Assembled']. they stay around .1 and go up as the 
 # simulation progresses
+
+## oxidation agent
+
+
+oxi_dl = exp_oxi_dl/um_to_lat_width
+
+oxi_dc = exp_oxi_dc_cyto * s_to_mcs / (um_to_lat_width ** 2)
+
+oxi_decay = oxi_dl**2/oxi_dc
+
+oxi_sec_thr = 10
+
+max_oxi_secrete = max_ck_secrete_infect
+
+oxi_death_thr = 1.5
+
 
 # Threshold at which cell infection is evaluated
 cell_infection_threshold = 1.0
@@ -890,7 +922,6 @@ class CytokineProductionAbsorptionSteppable(CoronavirusSteppableBasePy):
             
             if cell.dict['activated']:
                 # print('activated', cell.id)
-                
                 seen_field = self.total_seen_field(self.field.cytokine, cell)
                 produced = cell.dict['ck_production'] * nCoVUtils.hill_equation(seen_field, 100, 1)
 #                 print('produced ck', produced, produced/cell.dict['ck_production'],seen_field)
@@ -984,7 +1015,7 @@ class ImmuneRecruitmentSteppable(CoronavirusSteppableBasePy):
         :return: probability of immune cell seeding due to local and global recruitment
         """
         s_val = self.get_state_variable_val()
-        print('get_immune_seeding_prob:', s_val, math.erf(self.prob_scaling_factor * s_val))
+        #print('get_immune_seeding_prob:', s_val, math.erf(self.prob_scaling_factor * s_val))
         if s_val < 0:
             return 0.0
         else:
@@ -998,7 +1029,7 @@ class ImmuneRecruitmentSteppable(CoronavirusSteppableBasePy):
         :return: probability of immune cell removal due to local and global recruitment
         """
         s_val = self.get_state_variable_val()
-        print('get_immune_removal_prob:', s_val, math.erf(self.prob_scaling_factor * s_val))
+#         print('get_immune_removal_prob:', s_val, math.erf(self.prob_scaling_factor * s_val))
         if s_val > 0:
             return 0.0
         else:
@@ -1011,4 +1042,44 @@ class ImmuneRecruitmentSteppable(CoronavirusSteppableBasePy):
         :return: None
         """
         self.__total_cytokine = max(0.0, self.__total_cytokine + _inc_amount)
-        print('self.__total_cytokine:', self.__total_cytokine)
+#         print('self.__total_cytokine:', self.__total_cytokine)
+
+
+
+
+
+class oxidationAgentModelSteppable(CoronavirusSteppableBasePy):
+    def __init__(self, frequency=1):
+        SteppableBasePy.__init__(self, frequency)
+        self.track_cell_level_scalar_attribute(field_name='oxi_killed', attribute_name='oxi_killed')
+        self.oxi_secretor = None
+
+    def start(self):
+        self.get_xml_element('oxi_dc').cdata = oxi_dc
+        self.get_xml_element('oxi_decay').cdata = oxi_decay  
+        
+        self.oxi_secretor = self.get_field_secretor("oxidator")
+        
+    def step(self, mcs):
+        
+
+        for cell in self.cell_list_by_type(self.IMMUNECELL):
+#             oxi_sec = self.oxi_secretor.secreteInsideCellTotalCount(cell, max_ck_secrete_infect )
+            if cell.dict['activated']:
+                seen_field = self.total_seen_field(self.field.cytokine, cell)
+                #print(seen_field)
+                if seen_field > oxi_sec_thr:
+                    oxi_sec = self.oxi_secretor.secreteInsideCellTotalCount(cell, max_oxi_secrete/cell.volume )
+            
+        for cell in self.cell_list_by_type(self.UNINFECTED, self.INFECTED, self.INFECTEDSECRETING):
+            
+            seen_field = self.total_seen_field(self.field.oxidator, cell)
+            print(seen_field, seen_field/max_ck_secrete_infect)
+            if seen_field >= oxi_death_thr:
+                self.kill_cell(cell=cell)
+                cell.dict['oxi_killed'] = True
+#                 print('oxi agent cell kill: ', cell.id, ', x ', cell.xCOM, ', y ', cell.yCOM)
+
+    def finish(self):
+        # this function may be called at the end of simulation - used very infrequently though
+        return
