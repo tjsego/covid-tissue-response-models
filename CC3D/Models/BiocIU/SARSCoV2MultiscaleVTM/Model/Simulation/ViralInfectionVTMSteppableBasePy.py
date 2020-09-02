@@ -66,7 +66,7 @@ class ViralInfectionVTMSteppableBasePy(nCoVSteppableBase):
     def _load_viral_replication_model(self, cell, vr_step_size, unpacking_rate=0, replicating_rate=0, r_half=0,
                                       translating_rate=0, packing_rate=0, secretion_rate=0):
         """
-        Loads viral replication model for a cell; initial values of state model are extract from cell.dict
+        Loads viral replication model for a cell
         :param cell: cell for which the viral replication model is loaded
         :param vr_step_size: Antimony/SBML model step size
         :param unpacking_rate: model unpacking rate
@@ -82,15 +82,13 @@ class ViralInfectionVTMSteppableBasePy(nCoVSteppableBase):
 
         # Generate Antimony model string
         model_string = self.viral_replication_model_string(
-            unpacking_rate, replicating_rate, r_half, translating_rate, packing_rate, secretion_rate,
-            cell.dict['Unpacking'], cell.dict['Replicating'], cell.dict['Packing'], cell.dict['Assembled'],
-            cell.dict['Uptake'])
+            unpacking_rate, replicating_rate, r_half, translating_rate, packing_rate, secretion_rate)
         self.add_antimony_to_cell(model_string=model_string,
                                   model_name=ViralInfectionVTMSteppableBasePy.vr_model_name,
                                   cell=cell,
                                   step_size=vr_step_size)
         cell.dict[ViralInfectionVTMLib.vrl_key] = True
-        ViralInfectionVTMLib.enable_viral_secretion(cell, cell.type == self.VIRUSRELEASING)
+        ViralInfectionVTMLib.enable_viral_secretion(cell=cell, enable=cell.type == self.VIRUSRELEASING)
 
     def new_cell_in_time(self, cell_type, mcs=None):
         """
@@ -117,7 +115,6 @@ class ViralInfectionVTMSteppableBasePy(nCoVSteppableBase):
         """
         cell = self.new_cell_in_time(self.UNINFECTED, mcs)
         cell.dict[ViralInfectionVTMLib.vrl_key] = False
-        ViralInfectionVTMLib.reset_viral_replication_variables(cell=cell)
         cell.dict['Survived'] = False
         return cell
 
@@ -164,7 +161,6 @@ class ViralInfectionVTMSteppableBasePy(nCoVSteppableBase):
         cell.type = self.DYING
 
         # Remove viral replication model: no model for dead cell type
-        ViralInfectionVTMLib.reset_viral_replication_variables(cell=cell)
         self.remove_viral_replication_model(cell=cell)
 
     def remove_viral_replication_model(self, cell):

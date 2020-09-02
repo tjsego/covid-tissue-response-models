@@ -18,6 +18,9 @@ vr_cell_dict_to_sym = {'Unpacking': 'U',
                        'Packing': 'P',
                        'Assembled': 'A'}
 
+# List of all viral replication model variables
+vr_model_vars = ["U", "R", "P", "A", "Uptake", "Secretion"]
+
 # Name of Antimony/SBML model of immune cell recruitment
 ir_model_name = 'immuneRecruitment'
 
@@ -33,13 +36,10 @@ vim_steppable_key = 'vim_steppable'
 
 # todo: Generalize Antimony model string generator for general use
 def viral_replication_model_string(_unpacking_rate, _replicating_rate, _r_half, _translating_rate, _packing_rate,
-                                   _secretion_rate, _u_ini, _r_ini, _p_ini, _a_ini, _uptake=0):
+                                   _secretion_rate, _u_ini=0, _r_ini=0, _p_ini=0, _a_ini=0, _uptake=0):
     """
     Antimony model string generator for this project
     To change models, modify according to this structure
-    Modifications should be reflected in
-      1. the items of the dictionary "vr_cell_dict_to_sym"
-      2. the signature of the function "load_viral_replication_model"
     Variable "Uptake" is the uptake variable of the model, and should not be modified
     Variable "Secretion" is the secretion variable of the model, and should not be modified
     :param _unpacking_rate: model unpacking rate
@@ -122,18 +122,23 @@ def step_sbml_model_cell(cell, sbml_model_name=vr_model_name):
     dict_attrib['SBMLSolver'][sbml_model_name].timestep()
 
 
-def enable_viral_secretion(cell, secretion_rate, _enable: bool = True):
+def step_vrm_model(cell):
+    assert cell.dict[vrl_key], 'No viral replication model loaded'
+    step_sbml_model_cell(cell)
+
+
+def enable_viral_secretion(cell, secretion_rate=0, enable: bool = True):
     """
     Enable/disable secretion in state model for a cell
     :param cell: cell for which to enable/disable secretion in state model
     :param secretion_rate: value for which to get the value of state variable "Secretion"
-    :param _enable: enables secretion with value *secretion_rate* when True; sets value to zero when False
+    :param enable: enables secretion with value *secretion_rate* when True; sets value to zero when False
     :return:
     """
-    if _enable:
-        getattr(cell.sbml, vr_model_name)['secretion_rate'] = secretion_rate
+    if enable:
+        set_vrm_val(cell, 'secretion_rate', secretion_rate)
     else:
-        getattr(cell.sbml, vr_model_name)['secretion_rate'] = 0.0
+        set_vrm_val(cell, 'secretion_rate', 0.0)
 
 
 def set_viral_replication_cell_uptake(cell, uptake):
@@ -143,44 +148,64 @@ def set_viral_replication_cell_uptake(cell, uptake):
     :param uptake: value to set for state variable "Uptake"
     :return: None
     """
-    assert cell.dict[vrl_key]
-    getattr(cell.sbml, vr_model_name)['Uptake'] = uptake
+    set_vrm_val(cell, 'Uptake', uptake)
 
 
 def get_viral_replication_cell_secretion(cell):
     """
     Gets the current state variable "Secretion" for a cell
+    Viral replication model value for secretion is automatically set to zero
     :param cell: cell for which to get the value of state variable "Secretion"
     :return: value of state variable "Secretion"
     """
     assert cell.dict[vrl_key]
-    secr = getattr(cell.sbml, vr_model_name)['Secretion']
-    getattr(cell.sbml, vr_model_name)['Secretion'] = 0.0
+    secr = get_vrm_val(cell, 'Secretion')
+    set_vrm_val(cell, 'Secretion', 0.0)
     return secr
-
-
-def pack_viral_replication_variables(cell):
-    """
-    Loads state variables from viral replication model SBML into cell dictionary
-    :param cell: cell for which to load state variables from SBML into cell dictionary
-    :return: None
-    """
-    assert cell.dict[vrl_key]
-    for k, v in vr_cell_dict_to_sym.items():
-        cell.dict[k] = getattr(cell.sbml, vr_model_name)[v]
 
 
 def reset_viral_replication_variables(cell):
     """
-    Sets state variables from viral replication model in cell dictionary to zero
-    :param cell: cell for which to set state variables in cell dictionary to zero
+    Sets state variables from viral replication model to zero
+    :param cell: cell for which to set state variables to zero
     :return: None
     """
-    cell.dict['Uptake'] = 0
-    cell.dict['Secretion'] = 0
-    for k in vr_cell_dict_to_sym.keys():
-        cell.dict[k] = 0
+    [set_vrm_val(cell, v, 0.0) for v in vr_model_vars]
 
 
 def get_assembled_viral_load_inside_cell(cell, sbml_rate):
-    return sbml_rate*cell.dict['Uptake'] + cell.dict['Assembled']
+    return sbml_rate*get_vrm_val(cell, 'Uptake') + get_vrm_val(cell, 'A')
+
+
+def get_vrm_val(_cell, _var: str):
+    """
+    Gets the viral replication model variable value of a cell
+    :param _cell: cell for which to get a state variables
+    :param _var: name of state variable; can be the standard variable symbol or name (e.g. "Assembled" or "A")
+    :return: variable value
+    """
+    if _var in vr_cell_dict_to_sym.keys():
+        _var = vr_cell_dict_to_sym[_var]
+    try:
+        return getattr(_cell.sbml, vr_model_name)[_var]
+    except KeyError:
+        print(f'Warning: requested value get ({_var}) from a viral replication model that does not exist (returning 0)')
+        return 0.0
+
+
+def set_vrm_val(_cell, _var: str, _val):
+    """
+    Sets the viral replication model variable value of a cell
+    :param _cell: cell for which to get a state variables
+    :param _var: name of state variable; can be the standard variable symbol or name (e.g. "Assembled" or "A")
+    :param _val: value of state variable
+    :return: None
+    """
+    if _var in vr_cell_dict_to_sym.keys():
+        _var = vr_cell_dict_to_sym[_var]
+    try:
+        getattr(_cell.sbml, vr_model_name)[_var] = _val
+    except KeyError:
+        print(f'Warning: requested value set ({_var}) for a viral replication model that does not exist')
+        pass
+

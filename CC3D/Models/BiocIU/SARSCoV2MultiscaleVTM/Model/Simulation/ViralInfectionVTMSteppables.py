@@ -22,6 +22,7 @@ rng = np.random  # alias for random number generators (rng)
 sys.path.append(os.path.dirname(__file__))
 from ViralInfectionVTMSteppableBasePy import *
 import ViralInfectionVTMLib
+from ViralInfectionVTMLib import get_vrm_val, set_vrm_val
 from ViralInfectionVTMModelInputs import *
 
 # Import toolkit
@@ -54,7 +55,6 @@ class CellsInitializerSteppable(ViralInfectionVTMSteppableBasePy):
                 cell.lambdaVolume = volume_lm
 
                 cell.dict[ViralInfectionVTMLib.vrl_key] = False
-                ViralInfectionVTMLib.reset_viral_replication_variables(cell=cell)
                 cell.dict['Receptors'] = initial_unbound_receptors
                 self.load_viral_replication_model(cell=cell, vr_step_size=vr_step_size,
                                                   unpacking_rate=unpacking_rate,
@@ -65,9 +65,7 @@ class CellsInitializerSteppable(ViralInfectionVTMSteppableBasePy):
 
         # Infect a cell
         cell = self.cell_field[self.dim.x // 2, self.dim.y // 2, 0]
-        cell.dict['Unpacking'] = 1.0
         cell.type = self.INFECTED
-
         self.load_viral_replication_model(cell=cell, vr_step_size=vr_step_size,
                                           unpacking_rate=unpacking_rate,
                                           replicating_rate=replicating_rate,
@@ -75,6 +73,7 @@ class CellsInitializerSteppable(ViralInfectionVTMSteppableBasePy):
                                           translating_rate=translating_rate,
                                           packing_rate=packing_rate,
                                           secretion_rate=secretion_rate)
+        set_vrm_val(cell, 'U', 1.0)
 
         cell.dict['ck_production'] = max_ck_secrete_infect
 
@@ -131,12 +130,10 @@ class ViralReplicationSteppable(ViralInfectionVTMSteppableBasePy):
         # Do viral model
         for cell in self.cell_list_by_type(self.INFECTED, self.VIRUSRELEASING):
             # Step the model for this cell
-            ViralInfectionVTMLib.step_sbml_model_cell(cell=cell)
-            # Pack state variables into cell dictionary
-            ViralInfectionVTMLib.pack_viral_replication_variables(cell=cell)
+            ViralInfectionVTMLib.step_vrm_model(cell=cell)
 
             # Test for infection secretion
-            if cell.dict['Assembled'] > cell_infection_threshold:
+            if get_vrm_val(cell, 'A') > cell_infection_threshold:
                 cell.type = self.VIRUSRELEASING
                 ViralInfectionVTMLib.enable_viral_secretion(cell=cell, secretion_rate=secretion_rate)
 
@@ -145,7 +142,7 @@ class ViralReplicationSteppable(ViralInfectionVTMSteppableBasePy):
 
             # Test for cell death
             if cell.type == self.VIRUSRELEASING and \
-                    np.random.random() < nCoVUtils.hill_equation(cell.dict['Assembled'],
+                    np.random.random() < nCoVUtils.hill_equation(get_vrm_val(cell, 'A'),
                                                                  diss_coeff_uptake_apo,
                                                                  hill_coeff_uptake_apo):
                 self.kill_cell(cell=cell)
@@ -231,9 +228,9 @@ class ViralSecretionSteppable(ViralInfectionVTMSteppableBasePy):
             cell_does_uptake, uptake_amount = self.vim_steppable.do_cell_internalization(cell, viral_amount_com)
             if cell_does_uptake:
                 uptake = secretor.uptakeInsideCellTotalCount(cell, 1E12, uptake_amount / cell.volume)
-                cell.dict['Uptake'] = abs(uptake.tot_amount)
-                self.vim_steppable.update_cell_receptors(cell=cell, receptors_increment=-cell.dict['Uptake'] * s_to_mcs)
-                ViralInfectionVTMLib.set_viral_replication_cell_uptake(cell=cell, uptake=cell.dict['Uptake'])
+                set_vrm_val(cell, 'Uptake', abs(uptake.tot_amount))
+                self.vim_steppable.update_cell_receptors(cell=cell,
+                                                         receptors_increment=-get_vrm_val(cell, 'U') * s_to_mcs)
 
             if cell.type == self.VIRUSRELEASING:
                 sec_amount = ViralInfectionVTMLib.get_viral_replication_cell_secretion(cell=cell)
@@ -603,21 +600,21 @@ class SimDataSteppable(SteppableBasePy):
 
         if self.vrm_tracked_cell is not None and (plot_vrm_data or write_vrm_data):
             if plot_vrm_data:
-                self.vrm_data_win.add_data_point("U", mcs, self.vrm_tracked_cell.dict['Unpacking'])
-                self.vrm_data_win.add_data_point("R", mcs, self.vrm_tracked_cell.dict['Replicating'])
-                self.vrm_data_win.add_data_point("P", mcs, self.vrm_tracked_cell.dict['Packing'])
-                self.vrm_data_win.add_data_point("A", mcs, self.vrm_tracked_cell.dict['Assembled'])
-                self.vrm_data_win.add_data_point("Uptake", mcs, self.vrm_tracked_cell.dict['Uptake'])
-                self.vrm_data_win.add_data_point("Secretion", mcs, self.vrm_tracked_cell.dict['Secretion'])
+                self.vrm_data_win.add_data_point("U", mcs, get_vrm_val(self.vrm_tracked_cell, 'U'))
+                self.vrm_data_win.add_data_point("R", mcs, get_vrm_val(self.vrm_tracked_cell, 'R'))
+                self.vrm_data_win.add_data_point("P", mcs, get_vrm_val(self.vrm_tracked_cell, 'P'))
+                self.vrm_data_win.add_data_point("A", mcs, get_vrm_val(self.vrm_tracked_cell, 'A'))
+                self.vrm_data_win.add_data_point("Uptake", mcs, get_vrm_val(self.vrm_tracked_cell, 'Uptake'))
+                self.vrm_data_win.add_data_point("Secretion", mcs, get_vrm_val(self.vrm_tracked_cell, 'Secretion'))
 
             if write_vrm_data:
                 self.vrm_data[mcs] = [self.vrm_tracked_cell.id,
-                                      self.vrm_tracked_cell.dict['Unpacking'],
-                                      self.vrm_tracked_cell.dict['Replicating'],
-                                      self.vrm_tracked_cell.dict['Packing'],
-                                      self.vrm_tracked_cell.dict['Assembled'],
-                                      self.vrm_tracked_cell.dict['Uptake'],
-                                      self.vrm_tracked_cell.dict['Secretion']]
+                                      get_vrm_val(self.vrm_tracked_cell, 'U'),
+                                      get_vrm_val(self.vrm_tracked_cell, 'R'),
+                                      get_vrm_val(self.vrm_tracked_cell, 'P'),
+                                      get_vrm_val(self.vrm_tracked_cell, 'A'),
+                                      get_vrm_val(self.vrm_tracked_cell, 'Uptake'),
+                                      get_vrm_val(self.vrm_tracked_cell, 'Secretion')]
 
         if self.vrm_tracked_cell is not None and (plot_vim_data or write_vim_data):
             if plot_vim_data:
